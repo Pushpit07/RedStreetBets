@@ -6,8 +6,6 @@ A script that leverages the Reddit API to collect and analyse data from the Dail
 
 <img src="./files/sample.png">
 
-<br/>
-
 ### Why should you consider referring to this data ?
 
 In recent times, the WallStreetBets have garnered a lot of attention to themselves. They have a constant and strong presence in the mind of various investors and financial professionals.
