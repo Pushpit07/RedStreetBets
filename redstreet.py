@@ -1,50 +1,101 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from datetime import date, timedelta
-from dateutil.parser import parse
-import requests
+from keys import CLIENT_ID, SECRET_TOKEN, USERNAME, PASSWORD
+from collections import Counter
+import praw
+import csv
+import sys
 
-url = 'https://www.reddit.com/r/wallstreetbets/search/?q=flair%3A%22Daily%20Discussion%22&restrict_sr=1&sort=new'
+# Default number of comments to lookup
+no_of_comments = 50
+# Number of comments to lookup as specified as the command line argument
+try:
+    no_of_comments = int(sys.argv[1])
+except:
+    pass
 
-options = Options()
-options.headless = True
+# Connect to Reddit API
+reddit = praw.Reddit(client_id=CLIENT_ID, client_secret=SECRET_TOKEN, user_agent='RedStreetBets', username=USERNAME, password=PASSWORD)
 
-browser = webdriver.Chrome(options=options)
-browser.get(url)
+#################################################
+#  START: Get the number of specified comments  #
+#################################################
 
-yesterday = date.today() - timedelta(days=1)
-links = browser.find_elements_by_xpath('//*[@class="_eYtD2XCVieq6emjKBH3m"]')
+subreddit = reddit.subreddit('wallstreetbets')
+
+print('Fetching comments...')
+top_subreddit = subreddit.new(limit=no_of_comments)
+
+words_collection = []
+
+print('Fragmenting comments into separate words...')
+for submission in top_subreddit:
+    title = submission.title
+    title_words = title.split()
+    words_collection.append(title_words)
+
+###############################################
+#  END: Get the number of specified comments  #
+###############################################
+
+
+###########################################
+#  START: Funnel out possible stock names #
+###########################################
+
+potential_stock_symbols = []
+
+known_not_stocks = ['UPVOTE', 'SUPPORT', 'YOLO', 'YOLO.', 'CLASS', 'ACTION', 'AGAINST', 'ROBINHOOD', 'GAIN', 'LOSS', 'PORN', 'WSB', 'I', 'STILL', "DIDN'T", 'HEAR', 'NO', 'BELL']
+
+for title in words_collection:
+    for word in title:
+        if word.isupper() and word not in known_not_stocks:
+            potential_stock_symbols.append(word)
+
+#########################################
+#  END: Funnel out possible stock names #
+#########################################
+
 
 #######################################
-#  START: Get the link for yesterday  #
+#  START: Get stock tickers from csv  #
 #######################################
 
-for a in links:
-    if a.text.startswith('Daily Discussion Thread'):
-        date = "".join(a.text.split(' ')[-3:])
-        parsed = parse(date)
-        if parse(str(yesterday)) == parsed:
-            link = a.find_element_by_xpath('../..').get_attribute('href')
+stocks_list = []
+with open('./files/unique_usa_tickers.csv', 'r') as csv_file:
+    csv_reader = csv.reader(csv_file)
+    for row in csv_reader:
+        stocks_list.append(row[0])
 
-    if a.text.startswith('Weekend'):
-        weekend_date = a.text.split(' ')
-        parsed_date = weekend_date[-3] + ' ' + weekend_date[-2].split("-")[1] + weekend_date[-1]
-        parsed = parse(parsed_date)
-        saturday = weekend_date[-3] + ' ' + str(int(weekend_date[-2].split(
-            "-")[1].replace(',', '')) - 1) + ' ' + weekend_date[-1]
+#####################################
+#  END: Get stock tickers from csv  #
+#####################################
 
-        if parse(str(yesterday)) == parsed:
-            link = a.find_element_by_xpath('../..').get_attribute('href')
 
-        elif parse(str(yesterday)) == parse(str(saturday)):
-            link = a.find_element_by_xpath('../..').get_attribute('href')
+########################################
+#  START: Find most discussed tickers  #
+########################################
 
-stock_link = link.split('/')[-3]
-print(stock_link)
+stock_dict = Counter()
 
-html = requests.get(f'https://api.pushshift.io/reddit/submission/comment_ids/{stock_link}')
+def get_stock_list(comments, stocks_list):
+    for potential_stock_symbol in comments:
+        for ticker in stocks_list:
+            if ticker == potential_stock_symbol or potential_stock_symbol == (ticker+'.') or potential_stock_symbol == ('$'+ticker) or potential_stock_symbol == (ticker+'!'):
+                stock_dict[ticker] += 1
 
-raw_comment_list = html.json()
-browser.close()
+def Reverse(lst):
+    new_lst = lst[::-1]
+    return new_lst
 
-print(raw_comment_list)
+get_stock_list(potential_stock_symbols, stocks_list)
+
+ordered_stock_dict = sorted(stock_dict.items(), key=lambda stock_dict: stock_dict[1])
+largest_discussed_tickers = Reverse(ordered_stock_dict)
+
+######################################
+#  END: Find most discussed tickers  #
+######################################
+
+print('\nTotal comments read :', no_of_comments)
+print("\nTop 20 most discussed tickers-\n")
+for tick in largest_discussed_tickers[:20]:
+    print(tick)
